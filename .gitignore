@@ -1,0 +1,21 @@
+# Virtual environments
+venv/
+
+# Python bytecode/cache
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Local configuration
+*.env
+
+# IDE/OS cruft
+.DS_Store
+Thumbs.db
+
+# Pipeline outputs and derived assets
+outputs/
+*.joblib
+*.pkl
+*.log
+*.png
