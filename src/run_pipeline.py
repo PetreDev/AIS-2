@@ -12,12 +12,17 @@ from .config import ExperimentConfig, ensure_directories
 from .data_utils import load_raw_dataset, prepare_feature_frame, train_test_split_dataset
 from .evaluation import (
     generate_evaluation_results,
+    plot_class_distribution,
     plot_confusion_matrix,
+    plot_feature_distribution,
+    plot_method_distribution,
+    plot_metric_summary,
     plot_roc_curve_figure,
     plot_score_histogram,
+    plot_top_coefficients,
     save_metrics_to_json,
 )
-from .features import build_preprocessing_pipeline
+from .features import HTTPRequestFeatureExtractor, build_preprocessing_pipeline
 from .interpretability import export_top_coefficients
 from .modeling import build_model_pipeline
 from .reporting import export_false_predictions, export_sample_dataset, save_basic_statistics
@@ -47,6 +52,49 @@ def main() -> None:
     LOGGER.info("Computing basic statistics")
     basic_stats = compute_basic_statistics(features, labels)
     save_basic_statistics(basic_stats, config.paths.outputs / "basic_statistics.json")
+
+    LOGGER.info("Creating exploratory visualisations")
+    plot_class_distribution(labels, config.paths.figures / "class_distribution.png")
+    plot_method_distribution(features, config.paths.figures / "method_distribution.png")
+
+    numeric_extractor = HTTPRequestFeatureExtractor(
+        special_characters=config.features.special_characters,
+        suspicious_keywords=config.features.suspicious_keywords,
+        max_entropy_length=config.features.max_entropy_string_length,
+    )
+    numeric_array = numeric_extractor.fit_transform(features[["url", "body"]])
+    numeric_feature_names = numeric_extractor.get_feature_names_out()
+    numeric_features_df = pd.DataFrame(
+        numeric_array,
+        columns=numeric_feature_names,
+        index=labels.index,
+    )
+
+    feature_plots = [
+        ("request_length", "request_length_distribution.png", 60),
+        ("url_length", "url_length_distribution.png", 60),
+        ("body_length", "body_length_distribution.png", 60),
+        ("special_char_count", "special_char_count_distribution.png", 60),
+        ("special_char_ratio", "special_char_ratio_distribution.png", 50),
+        ("parameter_count", "parameter_count_distribution.png", 40),
+        ("unique_special_char_count", "unique_special_char_count_distribution.png", 30),
+        ("digit_ratio", "digit_ratio_distribution.png", 50),
+        ("uppercase_ratio", "uppercase_ratio_distribution.png", 50),
+        ("suspicious_keyword_count", "suspicious_keyword_count_distribution.png", 40),
+        ("entropy", "entropy_distribution.png", 60),
+    ]
+
+    for feature_name, filename, bins in feature_plots:
+        try:
+            plot_feature_distribution(
+                numeric_features_df,
+                labels,
+                feature_name,
+                config.paths.figures / filename,
+                bins=bins,
+            )
+        except KeyError:
+            LOGGER.warning("Skipping plot for missing feature '%s'", feature_name)
 
     LOGGER.info("Exporting sample dataset for submission")
     export_sample_dataset(
@@ -93,6 +141,9 @@ def main() -> None:
 
     evaluation = generate_evaluation_results(y_test.to_numpy(), y_pred, y_scores)
     save_metrics_to_json(evaluation, config.paths.outputs / "evaluation_metrics.json")
+    plot_metric_summary(
+        evaluation.metrics, config.paths.figures / "metric_summary.png"
+    )
 
     LOGGER.info("Saving evaluation plots")
     plot_confusion_matrix(
@@ -139,6 +190,14 @@ def main() -> None:
         best_model,
         top_k=25,
         output_path=config.paths.outputs / "top_logistic_coefficients.csv",
+    )
+    top_coefficients_df = pd.read_csv(
+        config.paths.outputs / "top_logistic_coefficients.csv"
+    )
+    plot_top_coefficients(
+        top_coefficients_df,
+        config.paths.figures / "top_logistic_coefficients.png",
+        top_k=15,
     )
 
     LOGGER.info("Pipeline completed successfully")

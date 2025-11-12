@@ -143,3 +143,207 @@ def plot_score_histogram(
     fig.savefig(output_path, dpi=300)
     plt.close(fig)
 
+
+def plot_class_distribution(labels: pd.Series, output_path: Path) -> None:
+    """Visualise the class distribution (attack vs. benign)."""
+
+    label_series = pd.Series(labels).astype(int)
+    counts = (
+        label_series.map({0: "Benign", 1: "Attack"})
+        .value_counts()
+        .sort_index()
+    )
+    colors = ["#1f77b4", "#d62728"]
+
+    fig, ax = plt.subplots(figsize=(6, 6))
+    ax.bar(
+        counts.index,
+        counts.values,
+        color=colors[: len(counts)],
+    )
+    ax.set_xlabel("Class")
+    ax.set_ylabel("Count")
+    ax.set_title("Class Distribution")
+    for index, value in enumerate(counts.values):
+        ax.text(index, value, f"{int(value)}", ha="center", va="bottom")
+    fig.tight_layout()
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(output_path, dpi=300)
+    plt.close(fig)
+
+
+def plot_method_distribution(features: pd.DataFrame, output_path: Path) -> None:
+    """Plot the distribution of HTTP methods."""
+
+    method_counts = (
+        features["method"].fillna("UNKNOWN").astype(str).str.upper().value_counts()
+    )
+
+    fig, ax = plt.subplots(figsize=(6, 6))
+    ax.bar(
+        method_counts.index,
+        method_counts.values,
+        color="#1f77b4",
+    )
+    ax.set_xlabel("Method")
+    ax.set_ylabel("Count")
+    ax.set_title("HTTP Method Distribution")
+    for index, value in enumerate(method_counts.values):
+        ax.text(index, value, f"{int(value)}", ha="center", va="bottom")
+    fig.tight_layout()
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(output_path, dpi=300)
+    plt.close(fig)
+
+
+def plot_feature_distribution(
+    numeric_features: pd.DataFrame,
+    labels: pd.Series,
+    feature_name: str,
+    output_path: Path,
+    *,
+    bins: int = 50,
+) -> None:
+    """Plot the distribution of a numeric feature split by class."""
+
+    if feature_name not in numeric_features.columns:
+        raise KeyError(f"Feature '{feature_name}' not found in numeric features.")
+
+    label_array = pd.Series(labels).astype(int).to_numpy()
+    feature_array = numeric_features[feature_name].to_numpy()
+
+    benign_mask = label_array == 0
+    attack_mask = label_array == 1
+
+    benign_data = feature_array[benign_mask]
+    attack_data = feature_array[attack_mask]
+
+    fig, axes = plt.subplots(1, 2, figsize=(12, 5), sharey=True)
+    sns.histplot(
+        benign_data,
+        bins=bins,
+        color="#1f77b4",
+        stat="count",
+        alpha=0.8,
+        ax=axes[0],
+    )
+    axes[0].set_title("Benign")
+    axes[0].set_xlabel(feature_name.replace("_", " ").title())
+    axes[0].set_ylabel("Density")
+
+    sns.histplot(
+        attack_data,
+        bins=bins,
+        color="#d62728",
+        stat="count",
+        alpha=0.8,
+        ax=axes[1],
+    )
+    axes[1].set_title("Attack")
+    axes[1].set_xlabel(feature_name.replace("_", " ").title())
+
+    for axis, data, color in zip(
+        axes,
+        (benign_data, attack_data),
+        ["#1f77b4", "#d62728"],
+    ):
+        if len(data) > 0:
+            mean_value = data.mean()
+            axis.axvline(mean_value, color=color, linestyle="--", linewidth=1.5)
+            ymax = axis.get_ylim()[1]
+            text_y = ymax * 0.9 if ymax > 0 else 0.1
+            axis.text(
+                mean_value,
+                text_y,
+                f"Mean = {mean_value:.2f}",
+                color=color,
+                rotation=90,
+                va="top",
+                ha="right",
+                backgroundcolor="white",
+            )
+
+    fig.suptitle(
+        f"{feature_name.replace('_', ' ').title()} Distribution by Class",
+        y=1.02,
+    )
+    fig.tight_layout()
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(output_path, dpi=300, bbox_inches="tight")
+    plt.close(fig)
+
+
+def plot_metric_summary(metrics: Dict[str, float], output_path: Path) -> None:
+    """Plot a bar chart summarising evaluation metrics."""
+
+    metric_series = pd.Series(metrics)
+    metric_series = metric_series.sort_values(ascending=True)
+
+    fig, ax = plt.subplots(figsize=(8, 5))
+    categories = metric_series.index.str.upper()
+    ax.barh(
+        categories,
+        metric_series.values,
+        color="#1f77b4",
+    )
+    ax.set_xlim(0, 1)
+    ax.set_xlabel("Score")
+    ax.set_ylabel("Metric")
+    ax.set_title("Evaluation Metric Summary")
+    for bar in ax.patches:
+        width = bar.get_width()
+        y = bar.get_y() + bar.get_height() / 2
+        ax.text(width + 0.01, y, f"{width:.3f}", va="center", ha="left")
+    fig.tight_layout()
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(output_path, dpi=300)
+    plt.close(fig)
+
+
+def plot_top_coefficients(
+    coefficients: pd.DataFrame,
+    output_path: Path,
+    *,
+    top_k: int = 15,
+) -> None:
+    """Plot the most influential features learned by the linear model."""
+
+    if {"feature", "coefficient", "direction"} - set(coefficients.columns):
+        raise KeyError(
+            "Coefficients DataFrame must contain 'feature', 'coefficient', and 'direction' columns."
+        )
+
+    attack_top = (
+        coefficients[coefficients["direction"] == "attack"]
+        .nlargest(top_k, "coefficient")
+    )
+    benign_top = (
+        coefficients[coefficients["direction"] == "benign"]
+        .nsmallest(top_k, "coefficient")
+    )
+    top_features = pd.concat([benign_top, attack_top], ignore_index=True)
+    top_features = top_features.sort_values("coefficient")
+    top_features["direction_label"] = top_features["direction"].str.capitalize()
+
+    palette = {"Attack": "#d62728", "Benign": "#1f77b4"}
+
+    fig_height = 0.4 * len(top_features) + 2
+    fig, ax = plt.subplots(figsize=(10, max(fig_height, 6)))
+    sns.barplot(
+        data=top_features,
+        x="coefficient",
+        y="feature",
+        hue="direction_label",
+        palette=palette,
+        orient="h",
+        ax=ax,
+    )
+    ax.set_xlabel("Coefficient")
+    ax.set_ylabel("Feature")
+    ax.set_title(f"Top {top_k} Positive and Negative Coefficients")
+    ax.axvline(0, color="black", linewidth=1)
+    ax.legend(title="Direction", loc="lower right")
+    fig.tight_layout()
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(output_path, dpi=300)
+    plt.close(fig)

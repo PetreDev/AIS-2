@@ -31,11 +31,11 @@ class DataConfig:
     """Configuration related to data ingestion and splitting."""
 
     label_column: str = "classification"
-    sample_size: int | None = 20000
+    sample_size: int | None = None
     test_size: float = 0.2
     random_state: int = 42
     stratify: bool = True
-    drop_duplicates: bool = False
+    drop_duplicates: bool = True
     duplicate_subset: Tuple[str, ...] | None = ("URL", "content", "classification")
 
 
@@ -61,8 +61,8 @@ class FeatureConfig:
     )
     max_entropy_string_length: int = 2048
     tfidf_ngram_range: Tuple[int, int] = (3, 5)
-    tfidf_min_df: int = 5
-    tfidf_max_features: int | None = 50000
+    tfidf_min_df: int = 10
+    tfidf_max_features: int | None = 300
     tfidf_analyzer: str = "char_wb"
 
 
